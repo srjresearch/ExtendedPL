@@ -480,3 +480,5 @@ int sample_bern(double U, double prob)
 		return(0);
 	}
 }
+
+//eof
