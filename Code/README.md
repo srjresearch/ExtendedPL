@@ -6,7 +6,7 @@ This directory contains C code that can be used to obtain posterior samples via 
 
 ## Extended Plackett-Luce model
 
-Extended Plackett-Luce analyses can be performed using epl_code.c. Posterior samples are obtained via the Metropolis Coupled MCMC scheme outlined in the paper. This algorithm exploits parallel computation using OpenMP, if these facilites are not available to the user then the code can be changed to execute on a single core; further details are given in the configuation section below.
+Extended Plackett-Luce analyses can be performed using epl_code.c. Posterior samples are obtained via the Metropolis Coupled MCMC scheme outlined in the paper. This algorithm exploits parallel computation using OpenMP; further details are given in the configuration section below.
 
 The code is currently configured to analyse the F1 data and can be compiled within a terminal environment using the command
 
@@ -20,7 +20,29 @@ and executed using the command
 
 ### Configuration
 
-The WAND model contains many parameters and the MCMC code must be configured to run on different datasets. Lines 20 to 30 of mcmc.c should be used to specify the number of rankers/entities, the data file location, and the number of desired MCMC iterations. Lines 55 to 72 allow the user to specify different ranking types (complete/partial/top); additional information on these types of rankings are given within the Data directory. The prior distribution is specified though lines 75 to 107. Additional algorithm options, for example, whether it is desired to use the Weighted or standard Plackett-Luce model, or if a fixed seed is to be used, can be defined using lines 110 to 117. The code is configured to initialise at random draw from the prior distribution, however, this can be changed in lines 121 to 222 if desired. Detailed comments within mcmc.c should help guide the user.
+The Metropolis Coupled MCMC sampling scheme is governed by several tuning parameters that must be configured to analyse different datasets. The bullet points below highlight the (beginning of) sections of code that may require user input. Detailed comments within epl_code.c should also help guide the user.
+
+* Line 20 - used to specify the number of rankers/entities, the data file location, the number of desired MCMC iterations and also the number of chains and CPU threads to be used within the computation. An indicator variable of whether or not to use a random seed (based on clock time) is also provided.
+
+* Line 61 - used to define the prior distribution for the unknown choice order and skill parameters. Recall that the entities are required to be labelled in order of preference (from 1 to K) when using a non-uniform prior on the choice order parameter. Note that the prior distribution is common across all chains, that is, only the likelihood component is tempered.
+
+* Line 77 - used to tune the Metropolis-Hastings proposals for both the choice order and skill parameters.
+
+* Line 94 - used to specify the (inverse) temperatures of each chain within the sampling scheme. The temperatures should be increasing; with the final chain having temperature 1.  
+
+The code is configured to initialise at random draw from the prior distribution although this can be changed in lines 105 onward if desired.
+
+### Outputs
+
+As mentioned above all outputs will be written to /epl_outputs in the current working directory. A summary of the files is given below.
+
+* acc_probs.txt - provides details of the acceptance rates for all parameter proposals and also the between-chain proposals. The user should tune the proposal mechanisms to achieve near optimal acceptance rates as discussed within the paper.
+
+* lambdaout.ssv - posterior samples of the skill parameters (after thin), row i column k gives sample i of skill parameter lambda_k.
+
+* sigmaout.ssv - posterior samples of the choice order parameter (after thin). 
+
+* likeliout.ssv - values of the (log) observed data likelihood evaluated for each posterior sample.
 
 ---
 
@@ -44,6 +66,14 @@ The Standard Plackett-Luce model requires very little configuration. Lines 22 to
 The prior distribution is specified though lines 54 to 66 and can be changed as desired. Note however that this Gibbs sampling algorithm relies on a (conjugate) Gamma prior for the skill parameters.
 The code is configured to initialise at random draw from the prior distribution, however, this can be changed in lines 111 to 134 if desired. Detailed comments within spl_code.c should help guide the user.
 
+### Outputs
 
+As mentioned above all outputs will be written to /spl_outputs in the current working directory. A summary of the files is given below.
+
+* lambdaout.ssv - posterior samples of the skill parameters (after thin), row i column k gives sample i of skill parameter lambda_k.
+
+* likeliout.ssv - values of the (log) observed data likelihood evaluated for each posterior sample.
+
+Note: when using the Weighted Plackett-Luce model both ranker_weights.ssv and pout.ssv and will also be provided. These files contain the posterior samples of the binary ranker weights along with the corresponding probabilities from which the ranker weights were drawn, respectively. Further details can be found within Johnson et al. (2019).
 
 
