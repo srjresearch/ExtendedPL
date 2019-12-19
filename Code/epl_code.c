@@ -7,21 +7,22 @@
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_linalg.h>
-#include <omp.h>
+#include <omp.h> 
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 
-////////////////////////// EXTENDED PL MODEL \\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+////////////////////////// EXTENDED Plackett-Luce MODEL \\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
 ///////////// Global variables /////////////
 
 //data
 int n = 21; //number of rankers/observations
 int K = 20; //number of entisties
-char datafilename[] = "../data/f1_data.ssv"; //data file location
+char datafilename[] = "../Data/f1_data.ssv"; //data file location
 
 
 //mcmc details -- note the total number of iterations performed is burn_in + (nsample*thin)
@@ -32,7 +33,6 @@ int thin = 100; //thin factor between iterations
 int no_of_chains = 5; //number of chains within the MC^3 scheme
 int num_thread = 5; //number of cores to use for computation. Use omp_get_num_threads() to get number of available cores
 //Note: not efficient to consider num_thread > no_of_chains
-
 
 int fix_seed = 1; //set = 1 for fixed rng seed. Otherwise seed based on clock time.
 //Note: even with a fixed seed the output might differ between runs due to the schocastic nature of job allocations to threads. For debugging set both fix_seed = 1 and no_of_thread = 1
@@ -91,7 +91,7 @@ int main()
 	double tau = 1.0; //poisson rate parameter for proposal 2
 	
 	
-	///////////// Details for parallel temporing /////////////
+	///////////// Details for parallel tempering /////////////
 	
 	double* chain_powers = (double*)malloc(no_of_chains * sizeof(double)); //chain i has likelihood^(chain_powers[i])
 	chain_powers[0] = 0.5;
