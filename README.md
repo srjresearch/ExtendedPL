@@ -4,7 +4,7 @@ This repository contains code and data associated with the manuscript entitled "
 
 ## Code
 
-The code directory contains C code that can be used to generate posterior realisations via the algorithm outlined within the paper. Instructions on how to compile and execute the code are also provided.
+The code directory contains C code that can be used to generate posterior realisations using the algorithm outlined within the paper. Instructions on how to compile and execute the code are also provided. This directory also contains C code to perform analyses under the Standard Plackett-Luce model.
 
 ## Data
 
