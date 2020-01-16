@@ -1,6 +1,6 @@
 # ExtendedPL
 
-This repository contains code and data associated with the manuscript entitled " ".
+This repository contains code and data associated with the manuscript entitled "On Bayesian inference for the Extended Plackett-Luce model".
 
 ## Code
 
