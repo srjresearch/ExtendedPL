@@ -416,7 +416,7 @@ double loglikeli_one_rank_pl(int** x, double* lambda_dagger, double** z, int* ni
 
 double observed_data_loglikeli_one_rank_pl(int** x, double* lambda_dagger, int* ni_vec, int i, int* K_vec, int* r_vec)
 {
-	int j,ranking;
+	int j;
 
 	double sum;
 	double likeli;
@@ -425,22 +425,22 @@ double observed_data_loglikeli_one_rank_pl(int** x, double* lambda_dagger, int* 
 	{
 		likeli = 0;
 		sum = 0;
-		for(j = 0; j < K_vec[ranking]; j++) //sum all lambdas
+		for(j = 0; j < K_vec[i]; j++) //sum all lambdas
 		{
-			sum += lambda_dagger[x[ranking][j]-1];
+			sum += lambda_dagger[x[i][j]-1];
 		}
 			
-		for(j = 0; j < ni_vec[ranking]; j++)
+		for(j = 0; j < ni_vec[i]; j++)
 		{
-			likeli += log(lambda_dagger[x[ranking][j]-1]) - log(sum);
-			sum -= lambda_dagger[x[ranking][j]-1]; //take off the jth lambda value from the sum...saves looping each time
+			likeli += log(lambda_dagger[x[i][j]-1]) - log(sum);
+			sum -= lambda_dagger[x[i][j]-1]; //take off the jth lambda value from the sum...saves looping each time
 		}
 	}else
 	{
 		likeli = 0;
-		for(j = 0; j < ni_vec[ranking]; j++) 
+		for(j = 0; j < ni_vec[i]; j++) 
 		{
-			likeli +=  - log(K_vec[ranking]-j);
+			likeli +=  - log(K_vec[i]-j);
 		}
 	}
 	return(likeli);
