@@ -22,19 +22,19 @@
 //data
 int n = 21; //number of rankers/observations
 int K = 20; //number of entisties
-char datafilename[] = "../Data/f1_data.ssv"; //data file location
+char datafilename[] = "../Data/f1_data_team_prior.ssv"; //data file location
 
 
 //mcmc details -- note the total number of iterations performed is burn_in + (nsample*thin)
-int burn_in = 10000; //number of burn-in iterations
+int burn_in = 100000; //number of burn-in iterations
 int nsample = 10000; //number of desired posterior realisations
-int thin = 100; //thin factor between iterations
+int thin = 200; //thin factor between iterations
 
 int no_of_chains = 5; //number of chains within the MC^3 scheme
 int num_thread = 5; //number of cores to use for computation. Use omp_get_num_threads() to get number of available cores
 //Note: not efficient to consider num_thread > no_of_chains
 
-int fix_seed = 1; //set = 1 for fixed rng seed. Otherwise seed based on clock time.
+int fix_seed = 0; //set = 1 for fixed rng seed. Otherwise seed based on clock time.
 //Note: even with a fixed seed the output might differ between runs due to the schocastic nature of job allocations to threads. For debugging set both fix_seed = 1 and no_of_thread = 1
 
 
@@ -53,6 +53,7 @@ double spl_log_prob(int* ranking, double* params, int K); //standard PL prob of 
 void generate_perm_pl(int* sigma, double* rho, int K, gsl_rng* r); //samples a permutation (ranking) from PL distribution with parameters rho
 int which_min_dbl(double* b, int size); //returns index of minimum value in array or doubles which has length size
 void Order(int* sigma, int* sigma_inv); //generates inverse permutation of sigma, and stores in sigma_inv
+void sample_x_hat(int* x_hat, gsl_rng* r); //function to randomly sample a prior mode (if a multi-modal prior distribution is used)
 
 
 int main()
@@ -63,20 +64,40 @@ int main()
 	double* rho = (double*)malloc(K * sizeof(double)); //sigma ~ PL(rho)
 	for(int j = 0; j < K; j++)
 	{
-		rho[j] = (j+1.0);
+		rho[j] = j + 1.0;
 	}
 	
+	//specify preference of entities under the SPL. Note that entities should be labelled in preference order and so a_j >= a_{j+1}.
 	double* a_vec_lambda = (double*)malloc(K * sizeof(double)); //lambda ~ Ga(a_lambda[sigma^{-1}[k]],b_lambda)
+	a_vec_lambda[0] = a_vec_lambda[1] = 410;
+	a_vec_lambda[2] = a_vec_lambda[3] = 400;
+	a_vec_lambda[4] = a_vec_lambda[5] = 310;
+	a_vec_lambda[6] = a_vec_lambda[7] = 220;
+	a_vec_lambda[8] = a_vec_lambda[9] = 190;
+	a_vec_lambda[10] = a_vec_lambda[11] = 150;
+	a_vec_lambda[12] = a_vec_lambda[13] = 150;
+	a_vec_lambda[14] = a_vec_lambda[15] = 135;
+	a_vec_lambda[16] = a_vec_lambda[17] = 130;
+	a_vec_lambda[18] = a_vec_lambda[19] = 120;
 	for(int k = 0; k < K; k++)
     {
-		a_vec_lambda[k] = 1.0;
+		a_vec_lambda[k] /= a_vec_lambda[K-1];
 	}
-    double b_lambda = 1;
+    double b_lambda = 1.0;
 	
+	int multi_modal_prior = 1; //set = 1 if using a multi-modal prior distribution. i.e. a_j = a_k for j \neq k.
+	//you are requred to alter the function "sample_x_hat" (line 772) to sample (at random) one of the modes of the prior predictive distribution
+	//NOTE: if using a uniform prior distribtuion a_j = a for all j then this indicator can safely be set to zero.
 	
 	///////////// Tuning parameters for MH steps /////////////
 	
-	double sd_lambda_rw = 1.0; //standard deviation for LNRW on lamdba (common across all lambdas and all chains)
+	double* sd_lambda_rw = (double*)malloc(no_of_chains * sizeof(double)); //chain i has likelihood^(chain_powers[i])
+	sd_lambda_rw[0] = 2.10;
+	sd_lambda_rw[1] = 1.80;
+	sd_lambda_rw[2] = 1.60;
+	sd_lambda_rw[3] = 1.40;
+	sd_lambda_rw[4] = 1.20;
+	
 	
 	int num_of_prop = 5; //number of different proposal mechanisms for sigma. Note: proposal mechanisms are in a different order to as presented within the paper.
 	double* proposal_probs = (double*)malloc(num_of_prop * sizeof(double));
@@ -86,7 +107,7 @@ int main()
 	proposal_probs[3] = 0.05; //probability of using proposal 4 (reverse proposal)
 	proposal_probs[4] = 0.05; //probability of using proposal 5 (prior proposal)
 
-	double no_swaps = 1; //number of swaps performed in proposals 1 - 3
+	double no_swaps = 2; //number of swaps performed in proposals 1 - 3
 
 	double tau = 1.0; //poisson rate parameter for proposal 2
 	
@@ -94,12 +115,12 @@ int main()
 	///////////// Details for parallel tempering /////////////
 	
 	double* chain_powers = (double*)malloc(no_of_chains * sizeof(double)); //chain i has likelihood^(chain_powers[i])
-	chain_powers[0] = 0.5;
-	chain_powers[1] = 0.55;
-	chain_powers[2] = 0.7;
-	chain_powers[3] = 0.85; 
+	chain_powers[0] = 0.25;
+	chain_powers[1] = 0.4;
+	chain_powers[2] = 0.55;
+	chain_powers[3] = 0.75;
 	chain_powers[4] = 1; //chain of interest
-	//Note: need chain_powers[0] < chain_powers[1] < ... < chain_powers[no_of_chains-1]
+	//Note: need chain_powers[0] < chain_powers[1] < ... < chain_powers[no_of_chains-1] = 1
 	
 	
 	///////////// Initalisation \\\\\\\\\\\\\\\\
@@ -116,9 +137,18 @@ int main()
 			gsl_rng_set(rng[i],i+10); 
 		}else //random initalisation
 		{
-			gsl_rng_set(rng[i],i*4236 + seed); 
+			gsl_rng_set(rng[i],i*42368335 + seed); 
 		}
 	}
+	
+	//initalise x_hat (mode of the prior predictive distribution)
+	int*  x_hat = (int*)calloc(K, sizeof(int));
+	int*  x_hat_inv = (int*)calloc(K, sizeof(int));
+    for(int k = 0; k < K; k++)
+    {
+		x_hat[k] = k;
+	}
+    Order(x_hat, x_hat_inv); 
     
     //initalise choice order parameters sigma
     int** sigma = 	make_int_mat(no_of_chains, K);  //2D array to hold the choice order parameter sigma for each chain
@@ -135,9 +165,10 @@ int main()
     {
 		for(int k = 0; k < K; k++)
 		{
-			lambda[c][k] = gsl_ran_gamma(rng[0],a_vec_lambda[sigma_inv[c][k]],1.0/b_lambda); //sample lambdas from prior
+			lambda[c][k] = gsl_ran_gamma(rng[0],a_vec_lambda[x_hat[sigma_inv[c][x_hat_inv[k]]]],1.0/b_lambda); //sample lambdas from prior
 		}
 	}
+	
 	
     
     ///////////// Useful quantities for MCMC /////////////
@@ -168,12 +199,11 @@ int main()
 		sum_a_vec_lambda += a_vec_lambda[k];
 	}
 	
+	
 	///////////// Varianbles for monitoring acceptance rates /////////////
 	
-	int* no_prop_made = (int*)calloc(num_of_prop , sizeof(int));
-	int* no_prop_acc = (int*)calloc(num_of_prop , sizeof(int));
-	int overall_acc = 0;
-    int* no_prop_lambda_acc = (int*)calloc(K , sizeof(int));
+	int*  sigma_acc = (int*)calloc(no_of_chains , sizeof(int));
+    int** lambda_acc =  make_int_mat(no_of_chains, K);
 	int** between_chain_prop = make_int_mat(no_of_chains, no_of_chains);
 	int** between_chain_acc = make_int_mat(no_of_chains, no_of_chains);
 	
@@ -207,6 +237,8 @@ int main()
 	}
 	FILE* lambda_out = fopen("epl_outputs/lambdaout.ssv","w");
 	FILE* likeli_out = fopen("epl_outputs/likeliout.ssv","w");
+	FILE* post_out = fopen("epl_outputs/postout.ssv","w");
+	FILE* target_out = fopen("epl_outputs/targetout.ssv","w");
 	FILE* sigma_out = fopen("epl_outputs/sigmaout.ssv","w");
 	FILE* acc_probs_out = fopen("epl_outputs/acc_probs.txt","w");
 	
@@ -226,7 +258,13 @@ int main()
 ////START MCMC
 for(int itercount = 0; itercount < (nit+1); itercount++)
 {
+	if(multi_modal_prior) //sample (at random) a mode of the prior predictive distribution
+	{
+		sample_x_hat(x_hat, rng[0]);
+		Order(x_hat, x_hat_inv); //compute inverse of prior predictive mode
+	}
 	
+
 	#pragma omp parallel for default(shared) //parallel loop
 	for(int c = 0; c < no_of_chains; c++)
 	{
@@ -236,7 +274,7 @@ for(int itercount = 0; itercount < (nit+1); itercount++)
 	double ran_U;
 	ran_U = gsl_rng_uniform(rng[omp_get_thread_num()]);
 	int proposal = sample_cum_probs(ran_U, proposal_cum_probs, num_of_prop); //sample which proposal to use
-	no_prop_made[proposal] ++;
+	
 	
 	copy_array(sigma[c], sigma_prop[c]); //copy entries in sigma into sigma_prop (not pointer)
 	
@@ -335,7 +373,7 @@ for(int itercount = 0; itercount < (nit+1); itercount++)
 	acc_prob -= spl_log_prob(sigma[c], rho, K);
 	for(int k = 0; k < K; k++) //prior ratio for lambda|\sigma
 	{
-		acc_prob += (a_vec_lambda[sigma_prop_inv[c][k]] - a_vec_lambda[sigma_inv[c][k]])*log(lambda[c][k]);
+		acc_prob += (a_vec_lambda[x_hat[sigma_prop_inv[c][x_hat_inv[k]]]] - a_vec_lambda[x_hat[sigma_inv[c][x_hat_inv[k]]]])*log(lambda[c][k]);
 	}
 	
 
@@ -343,11 +381,7 @@ for(int itercount = 0; itercount < (nit+1); itercount++)
 	{
 		copy_array(sigma_prop[c], sigma[c]); //change sigma to be sigma_prop
 		copy_array(sigma_prop_inv[c], sigma_inv[c]); //change sigma_inv to be sigma_prop_inv
-		
-		if(c == (no_of_chains-1))
-		{
-			no_prop_acc[proposal] ++;
-		}
+		sigma_acc[c] ++;
 	}
 
 	
@@ -355,7 +389,7 @@ for(int itercount = 0; itercount < (nit+1); itercount++)
 	
 	for(int k = 0; k < K; k++) //set up loop to sample lambda 
 	{
-		double lambda_prop =  exp(log(lambda[c][k]) + gsl_ran_gaussian(rng[omp_get_thread_num()], sd_lambda_rw)); //LNRW proposal
+		double lambda_prop =  exp(log(lambda[c][k]) + gsl_ran_gaussian(rng[omp_get_thread_num()], sd_lambda_rw[c])); //LNRW proposal
 		
 		double ll_cur = 0; //evalute (log) likelihood under current and proposed lamba
 		double ll_prop = 0;
@@ -371,16 +405,13 @@ for(int itercount = 0; itercount < (nit+1); itercount++)
 		}
 		
 		double acc_prob = chain_powers[c] * (ll_prop - ll_cur); //temper likelihood
-		acc_prob += a_vec_lambda[sigma_inv[c][k]] * (log(lambda_prop) - log(tmp_lambda)); //correct with prior and proposal ratio
+		acc_prob += a_vec_lambda[x_hat[sigma_inv[c][x_hat_inv[k]]]] * (log(lambda_prop) - log(tmp_lambda)); //correct with prior and proposal ratio
 		acc_prob += tmp_lambda - lambda_prop; 
 
 		
 		if(log(gsl_rng_uniform(rng[omp_get_thread_num()])) < acc_prob) //accept
 		{
-			if(c == (no_of_chains-1))
-			{
-				no_prop_lambda_acc[k] ++;
-			}
+			lambda_acc[c][k] ++;
 		}else
 		{
 			lambda[c][k] = tmp_lambda; //place back origional lambda
@@ -458,14 +489,35 @@ for(int itercount = 0; itercount < (nit+1); itercount++)
 	if(itercount > burn_in && itercount % thin == 0)  
 	{
 		double likeli = 0;
-		for(int i = 0; i < n; i++)
+		//compute log observed data likelihood (under the posterior)
+		for(int i = 0; i < n; i++) 
 		{
 			likeli += loglikeli_oneranking(x, lambda[no_of_chains-1], i, K, sigma[no_of_chains-1]);
 		}
-		
-		fprintf(likeli_out, "%f\n", likeli);
-		print_array_dbl(lambda_out, lambda[no_of_chains-1], K);
-		print_array_int(sigma_out, sigma[no_of_chains-1], K);
+		fprintf(likeli_out, "%f\n", likeli); //write to file
+		//now compute log posterior distribution
+		for(int k = 0; k < K; k++)
+		{
+			 likeli += log(gsl_ran_gamma_pdf(lambda[no_of_chains-1][k],  a_vec_lambda[x_hat[sigma_inv[no_of_chains-1][x_hat_inv[k]]]], 1.0/b_lambda));
+		}
+		likeli += spl_log_prob(sigma[no_of_chains-1], rho, K);
+		fprintf(post_out, "%f\n", likeli); //write to file
+		//now compute log target
+		for(int c = 0; c < (no_of_chains - 1); c++)
+		{
+			for(int i = 0; i < n; i++) 
+			{
+				likeli += chain_powers[c] * loglikeli_oneranking(x, lambda[c], i, K, sigma[c]);
+			}
+			for(int k = 0; k < K; k++)
+			{
+				 likeli += log(gsl_ran_gamma_pdf(lambda[c][k],  a_vec_lambda[x_hat[sigma_inv[c][x_hat_inv[k]]]], 1.0/b_lambda));
+			}
+			likeli += spl_log_prob(sigma[c], rho, K);
+		}
+		fprintf(target_out, "%f\n", likeli); //write to file
+		print_array_dbl(lambda_out, lambda[no_of_chains-1], K); //print lambda (posterior chain only)
+		print_array_int(sigma_out, sigma[no_of_chains-1], K); //print simga (posterior chain only)
 			
 	}
 	
@@ -484,40 +536,30 @@ for(int itercount = 0; itercount < (nit+1); itercount++)
 
 
 //print details on acceptance rates to file
-fprintf(acc_probs_out, "Number of proposals made: \n");	
-for(int i = 0; i < num_of_prop; i++)
+fprintf(acc_probs_out,"Sigma overall acc rate: \n");
+for(int c = 0; c < no_of_chains; c++)
 {
-	fprintf(acc_probs_out,"%d ", no_prop_made[i]);
-}
-fprintf(acc_probs_out,"\nNumber of proposals accepted: \n");
-for(int i = 0; i < num_of_prop; i++)
-{
-	fprintf(acc_probs_out,"%d ", no_prop_acc[i]);
-}
-fprintf(acc_probs_out,"\nWithin move acc rate: \n");
-for(int i = 0; i < num_of_prop; i++)
-{
-	fprintf(acc_probs_out,"%f ", (double) no_prop_acc[i]/no_prop_made[i]);
-}
-fprintf(acc_probs_out,"\nSigma overall acc rate: \n");
-for(int i = 0; i < num_of_prop; i++)
-{
-	fprintf(acc_probs_out,"%f ", (double) overall_acc/nit);
+	fprintf(acc_probs_out,"Chain %d: %f \n", c, (double) sigma_acc[c]/nit);
 }
 fprintf(acc_probs_out,"\nLambda overall acc rate: \n");
-for(int i = 0; i < K; i++)
+for(int c = 0; c < no_of_chains; c++)
 {
-	fprintf(acc_probs_out,"%f ", (double) no_prop_lambda_acc[i]/nit);
+	fprintf(acc_probs_out,"Chain %d: ", c);
+	for(int i = 0; i < K; i++)
+	{
+		fprintf(acc_probs_out,"%f ", (double) lambda_acc[c][i]/nit);
+	}
+	fprintf(acc_probs_out,"\n");
 }
-fprintf(acc_probs_out,"\nBeween chain proposals: \n");
+fprintf(acc_probs_out,"\n\nBeween chain proposals: \n");
 for(int i = 0; i < (no_of_chains-1); i++)
 {
-	fprintf(acc_probs_out,"%f ", (double) between_chain_prop[i][i+1]);	
+	fprintf(acc_probs_out,"%d ", (int) between_chain_prop[i][i+1]);	
 }
 fprintf(acc_probs_out,"\nBeween chain acceptances: \n");
 for(int i = 0; i < (no_of_chains-1); i++)
 {
-	fprintf(acc_probs_out,"%f ", (double) between_chain_acc[i][i+1]);	
+	fprintf(acc_probs_out,"%d ", (int) between_chain_acc[i][i+1]);	
 }
 fprintf(acc_probs_out,"\nBeween chain probs: \n");
 for(int i = 0; i < (no_of_chains-1); i++)
@@ -531,6 +573,8 @@ for(int i = 0; i < (no_of_chains-1); i++)
 //close output files
 fclose(lambda_out);
 fclose(likeli_out);
+fclose(post_out);
+fclose(target_out);
 fclose(sigma_out);
 fclose(acc_probs_out);
 	
@@ -724,5 +768,72 @@ void Order(int* sigma, int* sigma_inv)
 		sigma_inv[sigma[i]] = i;
 	}
 }
+
+void sample_x_hat(int* x_hat, gsl_rng* r)
+{
+	for(int k = 0; k < K; k++)
+	{
+		x_hat[k] = k;
+	}
+	if(0.5 < gsl_rng_uniform(r))
+	{
+		x_hat[0] = 1;
+		x_hat[1] = 0;
+	}
+	if(0.5 < gsl_rng_uniform(r))
+	{
+		x_hat[2] = 3;
+		x_hat[3] = 2;
+	}
+	if(0.5 < gsl_rng_uniform(r))
+	{
+		x_hat[4] = 5;
+		x_hat[5] = 4;
+	}
+	if(0.5 < gsl_rng_uniform(r))
+	{
+		x_hat[6] = 7;
+		x_hat[7] = 6;
+	}
+	if(0.5 < gsl_rng_uniform(r))
+	{
+		x_hat[8] = 9;
+		x_hat[9] = 8;
+	}
+	
+	double* latent_vars = (double*)malloc(4 * sizeof(double));
+	for(int k = 0; k < 4; k++) //sample uniform random variables
+	{
+		latent_vars[k] = gsl_rng_uniform(r);
+	}
+	for(int k = 0; k < 4; k++) //ranking is obtained by ordering latent vars from smallest to largest
+	{
+		int min_ind = which_min_dbl(latent_vars, 4); //find index of smallest latent var
+		x_hat[k+10] = min_ind + 10;
+		latent_vars[min_ind] = 1.5; //1.5 > 1 (largest possible latent var) so this position will not be selected again
+	}	
+	
+	if(0.5 < gsl_rng_uniform(r))
+	{
+		x_hat[14] = 15;
+		x_hat[15] = 14;
+	}
+	if(0.5 < gsl_rng_uniform(r))
+	{
+		x_hat[16] = 17;
+		x_hat[17] = 16;
+	}
+	if(0.5 < gsl_rng_uniform(r))
+	{
+		x_hat[18] = 19;
+		x_hat[19] = 18;
+	}
+	
+}
+
+
+
+
+
 
 //eof
