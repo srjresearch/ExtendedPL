@@ -24,13 +24,13 @@ The Metropolis Coupled MCMC sampling scheme is governed by several tuning parame
 
 * Line 20 - used to specify the number of rankers/entities, the data file location, the number of desired MCMC iterations and also the number of chains and CPU threads to be used within the computation. An indicator variable of whether or not to use a random seed (based on clock time) is also provided.
 
-* Line 61 - used to define the prior distribution for the unknown choice order and skill parameters. Recall that the entities are required to be labelled in order of preference (from 1 to K) when using a non-uniform prior on the choice order parameter. Note that the prior distribution is common across all chains, that is, only the likelihood component is tempered.
+* Line 62 - used to define the prior distribution for the unknown choice order and skill parameters. Recall that the entities are required to be labelled in order of preference (from 1 to K) when using a non-uniform prior distribution. Note that the prior distribution is common across all chains, that is, only the likelihood component is tempered. If specifying a multi-modal prior distribution (i.e. some a\_k values are equal) then the indication on line 88 should be set to 1. Further, in this case, you are also required to alter the function "sample\_x\_hat" on line 772 so that this function returns (at random) one of the modes of the prior predictive distribution.
 
-* Line 77 - used to tune the Metropolis-Hastings proposals for both the choice order and skill parameters.
+* Line 92 - used to tune the Metropolis-Hastings proposals for both the choice order and skill parameters.
 
-* Line 94 - used to specify the (inverse) temperatures of each chain within the sampling scheme. The temperatures should be increasing; with the final chain having temperature 1. 
+* Line 115 - used to specify the (inverse) temperatures of each chain within the sampling scheme. The temperatures should be increasing; with the final chain having temperature 1. 
 
-The code is configured to initialise at random draw from the prior distribution although this can be changed in lines 105 onward if desired.
+The code is configured to initialise at random draw from the prior distribution although this can be changed in lines 144 onward if desired.
 
 ### Outputs
 
@@ -43,6 +43,10 @@ As mentioned above all outputs will be written to /epl_outputs in the current wo
 * sigmaout.ssv - posterior samples of the choice order parameter (after thin). 
 
 * likeliout.ssv - values of the (log) observed data likelihood evaluated for each posterior sample.
+
+* postout.ssv - values of the (log) posterior (i.e. the chain with temperature = 1) evaluated for each posterior sample.
+
+* targetout.ssv - values of the (log) target distribution (the joint distribution of all chains) evaluated for each posterior sample.
 
 ---
 
